@@ -164,7 +164,7 @@ class Worker {
             }
 
             if (process.env.NODE_ENV === 'development') {
-                console.error('RESPONSE:', res.statusCode, err.stack ? err.stack : err);
+                console.error(req.path, res.statusCode, err.stack ? err.stack : err);
                 res.send({
                     success: false,
                     error: err.message ? err.message : err,
