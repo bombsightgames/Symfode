@@ -154,6 +154,30 @@ class Worker {
             }
         });
 
+        app.use((err, req, res, next) => {
+            if (res.headersSent) {
+                return next(err);
+            }
+
+            if (res.statusCode >= 200 && res.statusCode < 300) {
+                res.status(500);
+            }
+
+            if (process.env.NODE_ENV === 'development') {
+                console.error('RESPONSE:', res.statusCode, err.stack ? err.stack : err);
+                res.send({
+                    success: false,
+                    error: err.message ? err.message : err,
+                    stack: err.stack
+                });
+            } else {
+                res.send({
+                    success: false,
+                    error: err
+                });
+            }
+        });
+
         app.listen(config.api_port ? config.api_port : 3000, function() {
             defer.resolve();
         }).on('error', function(err) {
