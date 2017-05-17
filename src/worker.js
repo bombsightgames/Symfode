@@ -5,6 +5,7 @@ let Q = require('q'),
     express = require('express'),
     Sequelize = require('sequelize'),
     mongo = require('mongoose'),
+    Cache = require('./cache'),
     bodyParser = require('body-parser');
 
 mongo.Promise = global.Promise;
@@ -15,6 +16,7 @@ let entities = {};
 let documents = {};
 let services = {};
 let controllers = {};
+let cache = new Cache();
 class Worker {
     init(config, startupCommand) {
         let defer = Q.defer();
@@ -223,6 +225,10 @@ class Worker {
         }
 
         return defer.promise;
+    }
+
+    get cache() {
+        return cache;
     }
 
     get mysql() {

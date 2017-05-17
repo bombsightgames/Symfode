@@ -3,6 +3,7 @@
 let cluster = require('cluster'),
     Q = require('q');
 
+let memoryCache = {};
 class Master {
     init(config) {
         this.initialized = false;
@@ -25,15 +26,44 @@ class Master {
 
         console.info('Initializing worker #' + worker.id + '.');
         worker.on('message', (message) => {
-            if (message.cmd && message.cmd === 'init') {
-                if (!this.initialized) {
-                    if (Object.keys(cluster.workers).length >= this.workers) {
-                        this.initialized = true;
-                        this.initDefer.resolve();
-                    } else {
-                        this.startWorker();
+            switch(message.cmd) {
+                case 'init':
+                    if (!this.initialized) {
+                        if (Object.keys(cluster.workers).length >= this.workers) {
+                            this.initialized = true;
+                            this.initDefer.resolve();
+                        } else {
+                            this.startWorker();
+                        }
                     }
-                }
+                    break;
+                case 'cache':
+                    if (message.data.type === 'get') {
+                        var value = memoryCache[message.data.key];
+                        if (value && (!value.expires || value.expires > Date.now())) {
+                            value = value.value;
+                        } else if (value) {
+                            value = null;
+                            delete memoryCache[message.data.key];
+                        }
+
+                        worker.send({
+                            cmd: 'cache',
+                            value: value,
+                            randomKey: message.data.randomKey
+                        });
+                    } else if (message.data.type === 'set') {
+                        memoryCache[message.data.key] = {
+                            value: message.data.value,
+                            expires: message.data.expirationTime ? Date.now() + message.data.expirationTime : null
+                        };
+                    } else if (message.data.type === 'delete') {
+                        delete memoryCache[message.data.key];
+                    }
+                    break;
+                default:
+                    console.error('Invalid master command:', message.cmd);
+                    break;
             }
         });
 
