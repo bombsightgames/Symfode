@@ -1,7 +1,7 @@
 {
   "name": "symfode",
   "version": "0.2.0",
-  "description": "",
+  "description": "A simple web framework.",
   "main": "app.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
@@ -14,7 +14,6 @@
     "express": "^4.14.1",
     "mongoose": "^4.9.9",
     "mysql": "^2.13.0",
-    "password-hash-and-salt": "^0.1.4",
     "q": "^1.4.1",
     "sequelize": "^3.30.1"
   }

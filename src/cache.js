@@ -1,6 +1,6 @@
 'use strict';
 
-let Q = require('q');
+const Q = require('q');
 
 function Cache() {
     this.get = (key) => {

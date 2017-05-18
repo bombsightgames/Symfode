@@ -1,6 +1,6 @@
 'use strict';
 
-let Q = require('q'),
+const Q = require('q'),
     fs = require('fs'),
     express = require('express'),
     Sequelize = require('sequelize'),
@@ -12,13 +12,17 @@ mongo.Promise = global.Promise;
 
 let mysql = null;
 let app = null;
+let modules = null;
+let config = null;
 let entities = {};
 let documents = {};
 let services = {};
 let controllers = {};
 let cache = new Cache();
 class Worker {
-    init(config, startupCommand) {
+    init(initConfig, startupCommand, initModules, commands) {
+        config = initConfig;
+        modules = initModules;
         let defer = Q.defer();
 
         mysql = new Sequelize(config.mysql);
@@ -49,7 +53,7 @@ class Worker {
             defer.reject(err);
         }).then(() => {
             if (startupCommand.command) {
-                return this.runStartupCommand(startupCommand);
+                return this.runStartupCommand(startupCommand, commands);
             } else {
                 return this.loadControllers(config);
             }
@@ -66,22 +70,26 @@ class Worker {
     }
 
     loadEntities() {
-        fs.readdirSync(__dirname + '/entities/').forEach((file) => {
-            if (file.match(/\.entity.js$/) !== null && file !== 'index.js') {
-                let name = file.replace('.entity.js', '');
-                console.info('Loading entity:', name);
-                entities[name] = require(__dirname + '/entities/' + file)(this);
-            }
+        modules.forEach((module) => {
+            fs.readdirSync(module + '/entities/').forEach((file) => {
+                if (file.match(/\.entity.js$/) !== null && file !== 'index.js') {
+                    let name = file.replace('.entity.js', '');
+                    console.info('Loading entity:', name);
+                    entities[name] = require(module + '/entities/' + file)(this);
+                }
+            });
         });
     }
 
     loadDocuments() {
-        fs.readdirSync(__dirname + '/documents/').forEach((file) => {
-            if (file.match(/\.document.js$/) !== null && file !== 'index.js') {
-                let name = file.replace('.document.js', '');
-                console.info('Loading document:', name);
-                documents[name] = require(__dirname + '/documents/' + file)(this);
-            }
+        modules.forEach((module) => {
+            fs.readdirSync(module + '/documents/').forEach((file) => {
+                if (file.match(/\.document.js$/) !== null && file !== 'index.js') {
+                    let name = file.replace('.document.js', '');
+                    console.info('Loading document:', name);
+                    documents[name] = require(module + '/documents/' + file)(this);
+                }
+            });
         });
     }
 
@@ -89,19 +97,22 @@ class Worker {
         let defer = Q.defer();
 
         let promises = [];
-        fs.readdirSync(__dirname + '/services/').forEach((file) => {
-            if (file.match(/\.service.js$/) !== null && file !== 'index.js') {
-                let name = file.replace('.service.js', '');
-                console.info('Loading service:', name);
+        modules.forEach((module) => {
+            fs.readdirSync(module + '/services/').forEach((file) => {
+                if (file.match(/\.service.js$/) !== null && file !== 'index.js') {
+                    let name = file.replace('.service.js', '');
+                    console.info('Loading service:', name);
 
-                let service = require(__dirname + '/services/' + file);
-                services[name] = new service(this);
+                    let service = require(module + '/services/' + file);
+                    services[name] = new service(this);
 
-                if (services[name].init) {
-                    promises.push(services[name].init());
+                    if (services[name].init) {
+                        promises.push(services[name].init());
+                    }
                 }
-            }
+            });
         });
+
 
         Q.all(promises).then(() => {
             Object.keys(services).forEach((name) => {
@@ -148,13 +159,16 @@ class Worker {
             }
         });
 
-        fs.readdirSync(__dirname + '/controllers/').forEach((file) => {
-            if (file.match(/\.controller.js$/) !== null && file !== 'index.js') {
-                let name = file.replace('.controller.js', '');
-                console.info('Loading controller:', name);
-                controllers[name] = require(__dirname + '/controllers/' + file)(this, app);
-            }
+        modules.forEach((module) => {
+            fs.readdirSync(module + '/controllers/').forEach((file) => {
+                if (file.match(/\.controller.js$/) !== null && file !== 'index.js') {
+                    let name = file.replace('.controller.js', '');
+                    console.info('Loading controller:', name);
+                    controllers[name] = require(module + '/controllers/' + file)(this, app);
+                }
+            });
         });
+
 
         app.use((err, req, res, next) => {
             if (res.headersSent) {
@@ -190,37 +204,39 @@ class Worker {
         return defer.promise;
     }
 
-    runStartupCommand(startupCommand) {
+    runStartupCommand(startupCommand, commands) {
         let defer = Q.defer();
 
-        console.info('Executing command:', startupCommand.command, startupCommand.args);
-        if (startupCommand.command === 'create-user') {
-            if (startupCommand.args.username && startupCommand.args.password) {
-                this.services.user.createUser(startupCommand.args.username, startupCommand.args.password, null).then(() => {
-                    defer.resolve();
-                }, (err) => {
-                    defer.reject(err);
+        if (!commands['force-sync']) {
+            commands['force-sync'] = (defer, worker, command) => {
+                let util = require('util');
+                console.warn('Executing a force synchronization to the database is dangerous and will result in data loss!');
+                console.warn('Please type "danger" if you are fine with this:');
+                process.stdin.on('data', function (buffer) {
+                    let string = buffer.toString('utf8').trim();
+                    if (string === 'danger') {
+                        worker.mysql.sync({force: true}).then(() => {
+                            defer.resolve();
+                        }, (err) => {
+                            defer.reject(err);
+                        })
+                    } else {
+                        defer.reject('Force synchronization canceled.');
+                    }
                 });
-            } else {
-                defer.reject('Invalid command arguments.');
+            };
+        }
+
+        console.info('Executing command:', startupCommand.command, startupCommand.args);
+        var command = commands[startupCommand.command];
+        if (command) {
+            try {
+                command(defer, this, startupCommand);
+            } catch (e) {
+                console.error('Command error:', e);
+                defer.reject('Failed to execute command.');
             }
-        } else if (startupCommand.command === 'force-sync') {
-            let util = require('util');
-            console.warn('Executing a force synchronization to the database is dangerous and will result in data loss!');
-            console.warn('Please type "danger" if you are fine with this:');
-            process.stdin.on('data', function (buffer) {
-                let string = buffer.toString('utf8').trim();
-                if (string === 'danger') {
-                    mysql.sync({force: true}).then(() => {
-                        defer.resolve();
-                    }, (err) => {
-                        defer.reject(err);
-                    })
-                } else {
-                    defer.reject('Force synchronization canceled.');
-                }
-            });
-        }  else {
+        } else {
             defer.reject('Unrecognized command.');
         }
 
@@ -229,6 +245,10 @@ class Worker {
 
     get cache() {
         return cache;
+    }
+
+    get config() {
+        return config;
     }
 
     get mysql() {

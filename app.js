@@ -45,18 +45,6 @@ if (process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'developme
     process.exit(1);
 }
 
-let config = null;
-try {
-    config = require('./config');
-} catch (e) {
-    console.error('Failed to load configuration from "./config.js":', e);
-    process.exit(1);
-}
-
-if (startupCommand.command) {
-    config.workers = 1;
-}
-
 //TODO: Safe shutdown.
 process.on('uncaughtException', (err) => {
     console.error(new Date(), 'Uncaught Exception:', err.stack ? err.stack : err);
@@ -68,30 +56,53 @@ process.on('unhandledRejection', (err) => {
     process.exit(1);
 });
 
-if (cluster.isMaster) {
-    process.title = 'cs-master';
+class Symfode {
 
-    var master = require('./src/master');
-    console.info(new Date(), 'Initializing master process.');
-    master.init(config, startupCommand).then(() => {
-        console.info('Master process initialized.');
-        if (startupCommand.command) {
-            console.info('Command executed successfully.');
-            process.exit(0);
+    init(baseDir, initModules, commands) {
+        let modules = [];
+        initModules.forEach((module) => {
+            modules.push(baseDir + '/' + module);
+        });
+
+        let config = null;
+        try {
+            config = require(baseDir + '/config');
+        } catch (e) {
+            console.error('Failed to load configuration from "' + baseDir + '/config.js":', e);
+            process.exit(1);
         }
-    }, (err) => {
-        console.error('Failed to initialize master process:', err.stack ? err.stack : err);
-        process.exit(1);
-    });
-} else {
-    process.title = 'cs-worker' + cluster.worker.id;
 
-    var worker = require('./src/worker');
-    worker.init(config, startupCommand).then(() => {
-        console.info('Worker initialized.');
-        process.send({cmd: 'init'});
-    }, (err) => {
-        console.error('Failed to initialize worker:', err.stack ? err.stack : err);
-        process.exit(1);
-    });
+        if (startupCommand.command) {
+            config.workers = 1;
+        }
+
+        if (cluster.isMaster) {
+            process.title = 'sym-master';
+
+            var master = require('./src/master');
+            console.info(new Date(), 'Initializing master process.');
+            master.init(config, startupCommand).then(() => {
+                console.info('Master process initialized.');
+                if (startupCommand.command) {
+                    console.info('Command executed successfully.');
+                    process.exit(0);
+                }
+            }, (err) => {
+                console.error('Failed to initialize master process:', err.stack ? err.stack : err);
+                process.exit(1);
+            });
+        } else {
+            process.title = 'sym-worker' + cluster.worker.id;
+
+            var worker = require('./src/worker');
+            worker.init(config, startupCommand, modules, commands).then(() => {
+                console.info('Worker initialized.');
+                process.send({cmd: 'init'});
+            }, (err) => {
+                console.error('Failed to initialize worker:', err.stack ? err.stack : err);
+                process.exit(1);
+            });
+        }
+    }
 }
+module.exports = new Symfode();

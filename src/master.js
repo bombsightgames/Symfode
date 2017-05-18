@@ -1,6 +1,6 @@
 'use strict';
 
-let cluster = require('cluster'),
+const cluster = require('cluster'),
     Q = require('q');
 
 let memoryCache = {};
