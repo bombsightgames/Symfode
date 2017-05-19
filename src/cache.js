@@ -3,23 +3,25 @@
 const Q = require('q');
 
 function Cache() {
+    var cachePromises = {};
+    process.on('message', function(message) {
+        var defer = cachePromises[message.randomKey];
+        if (message.cmd === 'cache' && defer) {
+            delete cachePromises[message.randomKey];
+            defer.resolve(message.value);
+        }
+    });
+
     this.get = (key) => {
         var defer = Q.defer();
 
         var randomKey = Math.random();
-        var cacheListener = function(message) {
-            if (message.cmd === 'cache' && message.randomKey === randomKey) {
-                process.removeListener('message', cacheListener);
-                defer.resolve(message.value);
-            }
-        };
-        process.on('message', cacheListener);
-
         process.send({cmd: 'cache', data: {
             type: 'get',
             key: key,
             randomKey: randomKey
         }});
+        cachePromises[randomKey] = defer;
 
         return defer.promise;
     };
