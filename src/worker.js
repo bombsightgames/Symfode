@@ -184,12 +184,14 @@ class Worker {
                 res.send({
                     success: false,
                     error: err.message ? err.message : err,
-                    stack: err.stack
+                    stack: err.stack,
+                    errors: err.errors
                 });
             } else {
                 res.send({
                     success: false,
-                    error: err
+                    error: err,
+                    errors: err.errors
                 });
             }
         });
