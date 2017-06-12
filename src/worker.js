@@ -71,25 +71,37 @@ class Worker {
 
     loadEntities() {
         modules.forEach((module) => {
-            fs.readdirSync(module + '/entities/').forEach((file) => {
-                if (file.match(/\.entity.js$/) !== null && file !== 'index.js') {
-                    let name = file.replace('.entity.js', '');
-                    console.info('Loading entity:', name);
-                    entities[name] = require(module + '/entities/' + file)(this);
+            try {
+                fs.readdirSync(module + '/entities/').forEach((file) => {
+                    if (file.match(/\.entity.js$/) !== null && file !== 'index.js') {
+                        let name = file.replace('.entity.js', '');
+                        console.info('Loading entity:', name);
+                        entities[name] = require(module + '/entities/' + file)(this);
+                    }
+                })
+            } catch (e) {
+                if (e.code !== 'ENOENT') {
+                    throw e;
                 }
-            });
+            }
         });
     }
 
     loadDocuments() {
         modules.forEach((module) => {
-            fs.readdirSync(module + '/documents/').forEach((file) => {
-                if (file.match(/\.document.js$/) !== null && file !== 'index.js') {
-                    let name = file.replace('.document.js', '');
-                    console.info('Loading document:', name);
-                    documents[name] = require(module + '/documents/' + file)(this);
+            try {
+                fs.readdirSync(module + '/documents/').forEach((file) => {
+                    if (file.match(/\.document.js$/) !== null && file !== 'index.js') {
+                        let name = file.replace('.document.js', '');
+                        console.info('Loading document:', name);
+                        documents[name] = require(module + '/documents/' + file)(this);
+                    }
+                });
+            } catch (e) {
+                if (e.code !== 'ENOENT') {
+                    throw e;
                 }
-            });
+            }
         });
     }
 
@@ -98,19 +110,25 @@ class Worker {
 
         let promises = [];
         modules.forEach((module) => {
-            fs.readdirSync(module + '/services/').forEach((file) => {
-                if (file.match(/\.service.js$/) !== null && file !== 'index.js') {
-                    let name = file.replace('.service.js', '');
-                    console.info('Loading service:', name);
+            try {
+                fs.readdirSync(module + '/services/').forEach((file) => {
+                    if (file.match(/\.service.js$/) !== null && file !== 'index.js') {
+                        let name = file.replace('.service.js', '');
+                        console.info('Loading service:', name);
 
-                    let service = require(module + '/services/' + file);
-                    services[name] = new service(this);
+                        let service = require(module + '/services/' + file);
+                        services[name] = new service(this);
 
-                    if (services[name].init) {
-                        promises.push(services[name].init());
+                        if (services[name].init) {
+                            promises.push(services[name].init());
+                        }
                     }
+                });
+            } catch (e) {
+                if (e.code !== 'ENOENT') {
+                    throw e;
                 }
-            });
+            }
         });
 
 
@@ -160,13 +178,19 @@ class Worker {
         });
 
         modules.forEach((module) => {
-            fs.readdirSync(module + '/controllers/').forEach((file) => {
-                if (file.match(/\.controller.js$/) !== null && file !== 'index.js') {
-                    let name = file.replace('.controller.js', '');
-                    console.info('Loading controller:', name);
-                    controllers[name] = require(module + '/controllers/' + file)(this, app);
+            try {
+                fs.readdirSync(module + '/controllers/').forEach((file) => {
+                    if (file.match(/\.controller.js$/) !== null && file !== 'index.js') {
+                        let name = file.replace('.controller.js', '');
+                        console.info('Loading controller:', name);
+                        controllers[name] = require(module + '/controllers/' + file)(this, app);
+                    }
+                });
+            } catch (e) {
+                if (e.code !== 'ENOENT') {
+                    throw e;
                 }
-            });
+            }
         });
 
 
@@ -209,10 +233,14 @@ class Worker {
     runStartupCommand(startupCommand, commands) {
         let defer = Q.defer();
 
+        if (!commands) {
+            commands = {};
+        }
+
         if (!commands['force-sync']) {
-            commands['force-sync'] = (defer, worker, command) => {
+            commands['force-sync'] = (defer, worker) => {
                 let util = require('util');
-                console.warn('Executing a force synchronization to the database is dangerous and will result in data loss!');
+                console.warn('Executing a force synchronization to the database is dangerous and will remove all data!');
                 console.warn('Please type "danger" if you are fine with this:');
                 process.stdin.on('data', function (buffer) {
                     let string = buffer.toString('utf8').trim();
@@ -221,11 +249,26 @@ class Worker {
                             defer.resolve();
                         }, (err) => {
                             defer.reject(err);
-                        })
+                        });
                     } else {
                         defer.reject('Force synchronization canceled.');
                     }
                 });
+            };
+        }
+
+        if (!commands['alter-sync']) {
+            commands['alter-sync'] = (defer, worker) => {
+                let util = require('util');
+                console.warn('Executing an alter synchronization to the database could possibly cause data loss!');
+                console.warn('Executing synchronization in 5 seconds...');
+                setTimeout(() => {
+                    worker.mysql.sync({alter: true}).then(() => {
+                        defer.resolve();
+                    }, (err) => {
+                        defer.reject(err);
+                    });
+                }, 5000);
             };
         }
 
@@ -239,6 +282,12 @@ class Worker {
                 defer.reject('Failed to execute command.');
             }
         } else {
+            console.error('Invalid command:', startupCommand.command);
+            console.info('Command format: <command> --[key]=[value]');
+            console.info('Available commands:');
+            Object.keys(commands).forEach((command) => {
+                console.info(' ', command);
+            });
             defer.reject('Unrecognized command.');
         }
 
