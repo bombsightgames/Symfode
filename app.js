@@ -20,13 +20,7 @@ process.argv.forEach((val, index) => {
             process.exit(1);
         }
     } else if (index > 1) {
-        if (val === 'create-user' || val === 'force-sync') {
-            startupCommand.command = val;
-        } else {
-            console.error('Invalid command:', val);
-            console.info('Command format: <command> --[key]=[value]');
-            process.exit(1);
-        }
+        startupCommand.command = val;
     }
 });
 
