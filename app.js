@@ -52,7 +52,7 @@ process.on('unhandledRejection', (err) => {
 
 class Symfode {
 
-    init(baseDir, initModules, commands) {
+    init(baseDir, initModules, commands, options) {
         let modules = [];
         initModules.forEach((module) => {
             modules.push(baseDir + '/' + module);
@@ -75,7 +75,7 @@ class Symfode {
 
             var master = require('./src/master');
             console.info(new Date(), 'Initializing master process.');
-            master.init(config, startupCommand).then(() => {
+            master.init(config, options).then(() => {
                 console.info('Master process initialized.');
                 if (startupCommand.command) {
                     console.info('Command executed successfully.');
@@ -89,7 +89,7 @@ class Symfode {
             process.title = 'sym-worker' + cluster.worker.id;
 
             var worker = require('./src/worker');
-            worker.init(config, startupCommand, modules, commands).then(() => {
+            worker.init(config, startupCommand, modules, commands, options).then(() => {
                 console.info('Worker initialized.');
                 process.send({cmd: 'init'});
             }, (err) => {

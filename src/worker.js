@@ -6,23 +6,28 @@ const Q = require('q'),
     Sequelize = require('sequelize'),
     mongo = require('mongoose'),
     Cache = require('./cache'),
+    ioRedis = require('socket.io-redis'),
     bodyParser = require('body-parser');
 
 mongo.Promise = global.Promise;
 
 let mysql = null;
 let app = null;
+let server = null;
 let modules = null;
 let config = null;
+let options = null;
 let entities = {};
 let documents = {};
 let services = {};
 let controllers = {};
+let io = null;
 let cache = new Cache();
 class Worker {
-    init(initConfig, startupCommand, initModules, commands) {
+    init(initConfig, startupCommand, initModules, commands, initOptions) {
         config = initConfig;
         modules = initModules;
+        options = initOptions;
         let defer = Q.defer();
 
         mysql = new Sequelize(config.mysql);
@@ -152,6 +157,28 @@ class Worker {
         let defer = Q.defer();
 
         app = express();
+        server = require('http').Server(app);
+        if (options.enableWebsockets) {
+            io = require('socket.io')(server);
+            //io.adapter(ioRedis());
+
+            if (options.enableSessions) {
+                io.use((socket, next) => {
+                    console.log(socket.request);
+                    next();
+                });
+            }
+        }
+
+        process.on('message', function(message, connection){
+            if (message.type !== 'sticky-session:connection') {
+                return;
+            }
+
+            server.emit('connection', connection);
+            connection.push(new Buffer(message.data));
+            connection.resume();
+        });
 
         app.use(bodyParser.json());
 
@@ -163,15 +190,19 @@ class Worker {
         });
 
         app.use((req, res, next) => {
-            let token = req.get("authorization");
-            if (token) {
-                this.services.user.verifySession(token).then((session) => {
-                    req.session = session;
+            if (options.enableSessions) {
+                let token = req.get("authorization");
+                if (token) {
+                    this.services.user.verifySession(token).then((session) => {
+                        req.session = session;
+                        next();
+                    }, (err) => {
+                        res.status(401);
+                        next(err);
+                    });
+                } else {
                     next();
-                }, (err) => {
-                    res.status(401);
-                    next(err);
-                });
+                }
             } else {
                 next();
             }
@@ -192,7 +223,6 @@ class Worker {
                 }
             }
         });
-
 
         app.use((err, req, res, next) => {
             if (res.headersSent) {
@@ -220,12 +250,36 @@ class Worker {
             }
         });
 
-        app.listen(config.api_port ? config.api_port : 3000, function() {
-            defer.resolve();
-        }).on('error', function(err) {
-            console.error('Failed to start HTTP server.');
-            defer.reject(err);
-        });
+        let startWebserver = () => {
+            app.listen(config.api_port ? config.api_port : 3000, function () {
+                this.initalized = true;
+                defer.resolve();
+            }).on('error', function (err) {
+                console.error('Failed to start HTTP server.');
+                defer.reject(err);
+            });
+        };
+
+
+        if (options.enableWebsockets) {
+            server.listen(0, 'localhost');
+            server.once('listening', function () {
+                try {
+                    startWebserver();
+                } catch (e) {
+                    defer.reject(e);
+                }
+            });
+            server.on('error', function (err) {
+                if (!this.initalized) {
+                    defer.reject(err);
+                } else {
+                    console.error('Socket Server Error:', err);
+                }
+            });
+        } else {
+            startWebserver();
+        }
 
         return defer.promise;
     }
