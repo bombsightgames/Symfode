@@ -6,5 +6,6 @@ symfode.init(__dirname, [
     'src'
 ], [], {
     enableSessions: true,
+    enableRedis: true,
     enableWebsockets: true
 });

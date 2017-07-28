@@ -6,6 +6,7 @@ const Q = require('q'),
     Sequelize = require('sequelize'),
     mongo = require('mongoose'),
     Cache = require('./cache'),
+    redisClient = require('redis'),
     ioRedis = require('socket.io-redis'),
     bodyParser = require('body-parser');
 
@@ -22,6 +23,7 @@ let documents = {};
 let services = {};
 let controllers = {};
 let io = null;
+let redis = null;
 let cache = new Cache();
 class Worker {
     init(initConfig, startupCommand, initModules, commands, initOptions) {
@@ -39,7 +41,9 @@ class Worker {
             defer.reject(err);
         }).then(() => {
             console.info('Connected to MySQL database.');
-            return mongo.connect(config.mongo);
+            return mongo.connect(config.mongo, {
+                useMongoClient: true
+            });
         }, (err) => {
             console.error('Failed to sync MySQL database.');
             if (!startupCommand.command) {
@@ -136,7 +140,6 @@ class Worker {
             }
         });
 
-
         Q.all(promises).then(() => {
             Object.keys(services).forEach((name) => {
                 let service = services[name];
@@ -157,18 +160,6 @@ class Worker {
         let defer = Q.defer();
 
         app = express();
-        server = require('http').Server(app);
-        if (options.enableWebsockets) {
-            io = require('socket.io')(server);
-            //io.adapter(ioRedis());
-
-            if (options.enableSessions) {
-                io.use((socket, next) => {
-                    console.log(socket.request);
-                    next();
-                });
-            }
-        }
 
         process.on('message', function(message, connection){
             if (message.type !== 'sticky-session:connection') {
@@ -191,7 +182,7 @@ class Worker {
 
         app.use((req, res, next) => {
             if (options.enableSessions) {
-                let token = req.get("authorization");
+                let token = req.get('authorization');
                 if (token) {
                     this.services.user.verifySession(token).then((session) => {
                         req.session = session;
@@ -260,25 +251,65 @@ class Worker {
             });
         };
 
-
-        if (options.enableWebsockets) {
-            server.listen(0, 'localhost');
-            server.once('listening', function () {
-                try {
-                    startWebserver();
-                } catch (e) {
-                    defer.reject(e);
+        let startWebsocketServer = () => {
+            if (options.enableWebsockets) {
+                server = require('http').Server(app);
+                io = require('socket.io')(server);
+                if (options.enableRedis) {
+                    io.adapter(ioRedis(config.redis ? config.redis : 'redis://localhost/'));
                 }
+
+                if (options.enableSessions) {
+                    io.use((socket, next) => {
+                        if (socket.handshake.query.token) {
+                            this.services.user.verifySession(socket.handshake.query.token).then((session) => {
+                                socket.session = session;
+                                next();
+                            }, (err) => {
+                                next(err);
+                            });
+                        } else {
+                            next('Invalid token.');
+                        }
+                    });
+                }
+
+                server.listen(0, 'localhost');
+                server.once('listening', function () {
+                    try {
+                        startWebserver();
+                    } catch (e) {
+                        defer.reject(e);
+                    }
+                });
+                server.on('error', function (err) {
+                    if (!this.initalized) {
+                        defer.reject(err);
+                    } else {
+                        console.error('Socket Server Error:', err);
+                    }
+                });
+            } else {
+                startWebserver();
+            }
+        };
+
+        if (options.enableRedis) {
+            redis = redisClient.createClient(config.redis ? config.redis : 'redis://localhost/');
+
+            redis.on('ready', function () {
+                startWebsocketServer();
             });
-            server.on('error', function (err) {
+
+            redis.on('error', function (err) {
                 if (!this.initalized) {
                     defer.reject(err);
                 } else {
-                    console.error('Socket Server Error:', err);
+                    console.error('Redis Error:', err);
                 }
             });
         } else {
-            startWebserver();
+            startWebsocketServer();
         }
 
         return defer.promise;
@@ -374,6 +405,14 @@ class Worker {
 
     get services() {
         return services;
+    }
+
+    get io() {
+        return io;
+    }
+
+    get redis() {
+        return redis;
     }
 }
 

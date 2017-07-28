@@ -8,7 +8,9 @@
 <body>
 <script>
     (function() {
-        var socket = io.connect('http://localhost:3001?token=testtoken');
+        var socket = io.connect('http://localhost:3001', {
+            query: 'token=testtoken'
+        });
         socket.on('connect', function () {
             console.log('Connected!');
         });
