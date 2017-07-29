@@ -160,6 +160,10 @@ class Worker {
         let defer = Q.defer();
 
         app = express();
+        server = require('http').Server(app);
+        if (options.enableWebsockets) {
+            io = require('socket.io')(server);
+        }
 
         process.on('message', function(message, connection){
             if (message.type !== 'sticky-session:connection') {
@@ -242,10 +246,12 @@ class Worker {
         });
 
         let startWebserver = () => {
-            app.listen(config.api_port ? config.api_port : 3000, function () {
+            server.listen(0, 'localhost');
+            server.once('listening', () => {
                 this.initalized = true;
                 defer.resolve();
-            }).on('error', function (err) {
+            });
+            server.on('error', (err) => {
                 console.error('Failed to start HTTP server.');
                 defer.reject(err);
             });
@@ -253,8 +259,6 @@ class Worker {
 
         let startWebsocketServer = () => {
             if (options.enableWebsockets) {
-                server = require('http').Server(app);
-                io = require('socket.io')(server);
                 if (options.enableRedis) {
                     io.adapter(ioRedis(config.redis ? config.redis : 'redis://localhost/'));
                 }
@@ -273,25 +277,9 @@ class Worker {
                         }
                     });
                 }
-
-                server.listen(0, 'localhost');
-                server.once('listening', function () {
-                    try {
-                        startWebserver();
-                    } catch (e) {
-                        defer.reject(e);
-                    }
-                });
-                server.on('error', function (err) {
-                    if (!this.initalized) {
-                        defer.reject(err);
-                    } else {
-                        console.error('Socket Server Error:', err);
-                    }
-                });
-            } else {
-                startWebserver();
             }
+
+            startWebserver();
         };
 
         if (options.enableRedis) {

@@ -91,52 +91,48 @@ class Master {
     startServices() {
         let defer = Q.defer();
 
-        if (this.options.enableWebsockets) {
-            let port = this.config.socket_port ? this.config.socket_port : 3001;
-            let server = net.createServer({}, (connection) => {
-                let realIp = connection.remoteAddress;
-                connection.on('data', (data) => {
-                    connection.removeAllListeners('data');
-                    connection.pause();
+        let port = this.config.api_port ? this.config.api_port : 3000;
+        let server = net.createServer({}, (connection) => {
+            let realIp = connection.remoteAddress;
+            connection.on('data', (data) => {
+                connection.removeAllListeners('data');
+                connection.pause();
 
-                    let s = data.toString('ascii'),
-                        sarray = s.split('\r\n');
+                let s = data.toString('ascii'),
+                    sarray = s.split('\r\n');
 
-                    _.forEach(sarray, function (h) {
-                        if (h.indexOf('X-Forwarded-For:') > -1) {
-                            realIp = h.replace('X-Forwarded-For:', '').trim();
-                        }
-                    });
-
-                    let id = getWorkerIndex(realIp, this.config.workers);
-                    let worker = cluster.workers[id];
-                    if (worker) {
-                        worker.send({type: 'sticky-session:connection', data: data}, connection);
-                    } else {
-                        console.error('Worker not found for request. WID: ' + id + ' IP: ' + realIp);
+                _.forEach(sarray, function (h) {
+                    if (h.indexOf('X-Forwarded-For:') > -1) {
+                        realIp = h.replace('X-Forwarded-For:', '').trim();
                     }
                 });
-            });
 
-            server.listen(port);
-            server.once('listening', function () {
-                try {
-                    defer.resolve();
-                } catch (e) {
-                    defer.reject(e);
-                }
-            });
-
-            server.on('error', function (err) {
-                if (!this.initialized) {
-                    defer.reject(err);
+                let id = getWorkerIndex(realIp, this.config.workers);
+                let worker = cluster.workers[id];
+                if (worker) {
+                    worker.send({type: 'sticky-session:connection', data: data}, connection);
                 } else {
-                    console.error('Socket Error:', err);
+                    console.error('Worker not found for request. WID: ' + id + ' IP: ' + realIp);
                 }
             });
-        } else {
-            defer.resolve();
-        }
+        });
+
+        server.listen(port);
+        server.once('listening', function () {
+            try {
+                defer.resolve();
+            } catch (e) {
+                defer.reject(e);
+            }
+        });
+
+        server.on('error', function (err) {
+            if (!this.initialized) {
+                defer.reject(err);
+            } else {
+                console.error('Socket Error:', err);
+            }
+        });
 
         return defer.promise;
     }
