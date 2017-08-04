@@ -209,7 +209,7 @@ class Worker {
                     if (file.match(/\.controller.js$/) !== null && file !== 'index.js') {
                         let name = file.replace('.controller.js', '');
                         console.info('Loading controller:', name);
-                        controllers[name] = require(module + '/controllers/' + file)(this, app);
+                        controllers[name] = require(module + '/controllers/' + file)(this, app, io);
                     }
                 });
             } catch (e) {
