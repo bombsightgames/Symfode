@@ -170,6 +170,7 @@ class Worker {
                 return;
             }
 
+            connection.realIp = message.realIp;
             server.emit('connection', connection);
             connection.push(new Buffer(message.data));
             connection.resume();

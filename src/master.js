@@ -110,7 +110,11 @@ class Master {
                 let id = getWorkerIndex(realIp, this.config.workers);
                 let worker = cluster.workers[id];
                 if (worker) {
-                    worker.send({type: 'sticky-session:connection', data: data}, connection);
+                    worker.send({
+                        type: 'sticky-session:connection',
+                        data: data,
+                        realIp: realIp
+                    }, connection);
                 } else {
                     console.error('Worker not found for request. WID: ' + id + ' IP: ' + realIp);
                 }
