@@ -32,7 +32,12 @@ class Worker {
         options = initOptions;
         let defer = Q.defer();
 
-        mysql = new Sequelize(config.mysql);
+        mysql = new Sequelize(config.mysql, {
+            database: config.mysql,
+            dialect: 'mysql',
+            logging: process.env.NODE_ENV === 'local' ? console.log : false,
+            migrationStorageTableName: 'SequelizeMeta'
+        });
         mysql.authenticate().then(() => {
             this.loadEntities();
             return mysql.sync();

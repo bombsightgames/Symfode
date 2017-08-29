@@ -8,10 +8,11 @@ const cluster = require('cluster'),
 
 let memoryCache = {};
 class Master {
-    init(config, options) {
+    init(config, startupCommand, options) {
         this.initialized = false;
         this.config = config;
         this.options = options;
+        this.startupCommand = startupCommand;
         this.workers = config.workers ? config.workers : 2;
 
         this.initDefer = Q.defer();
@@ -121,7 +122,12 @@ class Master {
             });
         });
 
-        server.listen(port);
+        if (!this.startupCommand || !this.startupCommand.command) {
+            server.listen(port);
+        } else {
+            defer.resolve();
+        }
+
         server.once('listening', function () {
             try {
                 defer.resolve();
