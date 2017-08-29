@@ -33,7 +33,6 @@ class Worker {
         let defer = Q.defer();
 
         mysql = new Sequelize(config.mysql, {
-            database: config.mysql,
             dialect: 'mysql',
             logging: process.env.NODE_ENV === 'local' ? console.log : false,
             migrationStorageTableName: 'SequelizeMeta'
@@ -342,9 +341,29 @@ class Worker {
                 console.warn('Executing an alter synchronization to the database could possibly cause data loss!');
                 console.warn('Executing synchronization in 5 seconds...');
                 setTimeout(() => {
-                    worker.mysql.sync({alter: true}).then(() => {
-                        defer.resolve();
+                    worker.mysql.query(`
+                        SELECT concat('ALTER TABLE ', TABLE_NAME, ' DROP FOREIGN KEY ', CONSTRAINT_NAME, ';') 
+                        FROM information_schema.key_column_usage 
+                        WHERE CONSTRAINT_SCHEMA = '${worker.mysql.config.database}' 
+                        AND referenced_table_name IS NOT NULL;
+                    `).then((rows) => {
+                        let promises = [];
+
+                        rows[0].forEach((row) => {
+                            promises.push(worker.mysql.query(row[Object.keys(row)[0]]));
+                        });
+
+                        Q.all(promises).then(() => {
+                            worker.mysql.sync({alter: true}).then(() => {
+                                defer.resolve();
+                            }, (err) => {
+                                defer.reject(err);
+                            });
+                        }, (err) => {
+                            defer.reject(err);
+                        });
                     }, (err) => {
+                        console.error('Failed to drop current constraints.');
                         defer.reject(err);
                     });
                 }, 5000);
