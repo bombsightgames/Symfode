@@ -103,7 +103,7 @@ class Master {
 
                 _.forEach(sarray, function (h) {
                     if (h.indexOf('X-Forwarded-For:') > -1) {
-                        realIp = h.replace('X-Forwarded-For:', '').trim();
+                        realIp = h.replace('X-Forwarded-For:', '').trim().split(',')[0];
                     }
                 });
 
