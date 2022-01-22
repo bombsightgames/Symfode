@@ -45,9 +45,7 @@ class Worker {
             defer.reject(err);
         }).then(() => {
             console.info('Connected to MySQL database.');
-            return mongo.connect(config.mongo, {
-                useMongoClient: true
-            });
+            return mongo.connect(config.mongo);
         }, (err) => {
             console.error('Failed to sync MySQL database.');
             if (!startupCommand.command) {
