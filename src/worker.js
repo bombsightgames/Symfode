@@ -242,7 +242,7 @@ class Worker {
             } else {
                 res.send({
                     success: false,
-                    error: err,
+                    error: err.message ? err.message : err,
                     errors: err.errors
                 });
             }
